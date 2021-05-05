@@ -34,4 +34,4 @@ data;
 param m:= 3;
 
 
-param P {x in 1..N, y in 1..N} = Normal01();
+param P {x in 1..N, y in 1..N} = Irand224() mod 9;
