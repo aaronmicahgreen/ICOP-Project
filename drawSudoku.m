@@ -3,7 +3,6 @@ function drawSudoku(B)
 
 %   Copyright 2014 The MathWorks, Inc. 
 
-
 figure;hold on;axis off;axis equal % prepare to draw
 rectangle('Position',[0 0 9 9],'LineWidth',3,'Clipping','off') % outside border
 rectangle('Position',[3,0,3,9],'LineWidth',2) % heavy vertical lines
