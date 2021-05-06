@@ -75,26 +75,3 @@ subject to unique{i in N, j in N}: sum{k in N} z[i,j,k] = 1;
 #7         6  2  9  .  .  .  .  .  .
 #8         .  4  .  .  .  7  6  .  .
 #9         5  .  7  6  .  .  .  .  3 ;
-
-solve;
-
-#display the results
-for {i in N}{
-    for {j in N}{
-      for {k in N}{
-         if (z[i,j,k] == 1) then printf "%3i", k;
-      };
-      if ((j mod m) == 0) then printf " | ";
-   };
-   printf "\n";
-   if ((i mod m) == 0) then {
-      for {j in 1..m}{
-         for {k in 1..m-1}{ printf "---" };
-         if (j < m) then
-            printf "----+-";
-         else
-            printf "----+\n";
-      };
-   };
-};
-
