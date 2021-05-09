@@ -1,114 +1,100 @@
-function [S,eflag] = sudokuSolver(B)
-% This function sets up the rules for Sudoku. It reads in the puzzle
-% expressed in matrix B, calls intlinprog to solve the puzzle, and returns
-% the solution in matrix S.
-%
-% The matrix B should have 3 columns and at least 17 rows (because a Sudoku
-% puzzle needs at least 17 entries to be uniquely solvable). The first two
-% elements in each row are the i,j coordinates of a clue, and the third
-% element is the value of the clue, an integer from 1 to 9. If B is a
-% 9-by-9 matrix, the function first converts it to 3-column form.
+function solution = sudokuSolver(puzzle, clueForm)
+% sudokuSolver: take a sudoku puzzle, either in 9x9 form or in clue form,
+% convert it into an appropriate set of constraints for Matlab's intlinprog
+% solver, and find a solution if possible.
+%**************************************************************************
+ 
+    puzzle = convertPuzzleToClues(puzzle);
 
-%   Copyright 2014 The MathWorks, Inc. 
+    n = 9^3;
+    m = 4*9^2;
+    A = zeros(m,n);
+    b = ones(m,1);
+    f = zeros(n, 1)';
+    lowerBound = zeros(9,9,9);
+    upperBound = lowerBound+1;
 
-if isequal(size(B),[9,9]) % 9-by-9 clues
-    % Convert to 81-by-3
-    [SM,SN] = meshgrid(1:9); % make i,j entries
-    B = [SN(:),SM(:),B(:)]; % i,j,k rows
-    % Now delete zero rows
-    [rrem,~] = find(B(:,3) == 0);
-    B(rrem,:) = [];
-end
+    %% Set up the constraints
+    % In order to get this working with matlab's intlinprog, we need to flatten
+    % the constraints into a matrix. It's a less intuitive way to think of the
+    % constraints, but matlab doesn't like tensors.
 
-if size(B,2) ~= 3 || length(size(B)) > 2
-    error('The input matrix must be N-by-3 or 9-by-9')
-end
-
-if sum([any(B ~= round(B)),any(B < 1),any(B > 9)]) % enforces entries 1-9
-    error('Entries must be integers from 1 to 9')
-end
-
-%% The rules of Sudoku:
-N = 9^3; % number of independent variables in x, a 9-by-9-by-9 array
-M = 4*9^2; % number of constraints, see the construction of Aeq
-Aeq = zeros(M,N); % allocate equality constraint matrix Aeq*x = beq
-beq = ones(M,1); % allocate constant vector beq
-f = (1:N)'; % the objective can be anything, but having nonconstant f can speed the solver
-lb = zeros(9,9,9); % an initial zero array
-ub = lb+1; % upper bound array to give binary variables
-
-counter = 1;
-for j = 1:9 % one in each row
-    for k = 1:9
-        Astuff = lb; % clear Astuff
-        Astuff(1:end,j,k) = 1; % one row in Aeq*x = beq
-        Aeq(counter,:) = Astuff(:)'; % put Astuff in a row of Aeq
-        counter = counter + 1;
-    end
-end
-
-for i = 1:9 % one in each column
-    for k = 1:9
-        Astuff = lb;
-        Astuff(i,1:end,k) = 1;
-        Aeq(counter,:) = Astuff(:)';
-        counter = counter + 1;
-    end
-end
-
-for U = 0:3:6 % one in each square
-    for V = 0:3:6
+    counter = 1;
+    % Create constraint so each row only has one of each number
+    for j = 1:9 
         for k = 1:9
-            Astuff = lb;
-            Astuff(U+(1:3),V+(1:3),k) = 1;
-            Aeq(counter,:) = Astuff(:)';
+            temp = lowerBound; 
+            temp(1:end,j,k) = 1; 
+            A(counter,:) = temp(:)'; 
             counter = counter + 1;
         end
     end
-end
-
-for i = 1:9 % one in each depth
-    for j = 1:9
-        Astuff = lb;
-        Astuff(i,j,1:end) = 1;
-        Aeq(counter,:) = Astuff(:)';
-        counter = counter + 1;
+    % Create constraint so each column only has one of each number
+    for i = 1:9 
+        for k = 1:9
+            temp = lowerBound;
+            temp(i,1:end,k) = 1;
+            A(counter,:) = temp(:)';
+            counter = counter + 1;
+        end
     end
-end
-
-%% Put the particular puzzle in the constraints
-% Include the initial clues in the |lb| array by setting corresponding
-% entries to 1. This forces the solution to have |x(i,j,k) = 1|.
-
-for i = 1:size(B,1)
-    lb(B(i,1),B(i,2),B(i,3)) = 1;
-end
-
-%% Solve the Puzzle
-% The Sudoku problem is complete: the rules are represented in the |Aeq|
-% and |beq| matrices, and the clues are ones in the |lb| array. Solve the
-% problem by calling |intlinprog|. Ensure that the integer program has all
-% binary variables by setting the intcon argument to |1:N|, with lower and
-% upper bounds of 0 and 1.
-
-intcon = 1:N;
-
-[x,~,eflag] = intlinprog(f,intcon,[],[],Aeq,beq,lb,ub);
-
-%% Convert the Solution to a Usable Form
-% To go from the solution x to a Sudoku grid, simply add up the numbers at
-% each $(i,j)$ entry, multiplied by the depth at which the numbers appear:
-
-if eflag > 0 % good solution
-    x = reshape(x,9,9,9); % change back to a 9-by-9-by-9 array
-    x = round(x); % clean up non-integer solutions
-    y = ones(size(x));
-    for k = 2:9
-        y(:,:,k) = k; % multiplier for each depth k
+    % Create constraint so each 3x3 subgrid only has one of each number
+    for U = 0:3:6 
+        for V = 0:3:6
+            for k = 1:9
+                temp = lowerBound;
+                temp(U+(1:3),V+(1:3),k) = 1;
+                A(counter,:) = temp(:)';
+                counter = counter + 1;
+            end
+        end
+    end
+    % create constraint so each cell only has one entry
+    for i = 1:9 
+        for j = 1:9
+            temp = lowerBound;
+            temp(i,j,1:end) = 1;
+            A(counter,:) = temp(:)';
+            counter = counter + 1;
+        end
     end
 
-    S = x.*y; % multiply each entry by its depth
-    S = sum(S,3); % S is 9-by-9 and holds the solved puzzle
-else
-    S = [];
+    %% We can add the starting clues
+    % to the puzzle by changing the lower bound so it includes 1's for the vars
+    % that need to be 1's based on the clues
+
+    for i = 1:size(puzzle,1)
+        lowerBound(puzzle(i,1),puzzle(i,2),puzzle(i,3)) = 1;
+    end
+
+
+    integerConstraints = 1:n; % we need to specify which vars need to be integers (all of them do)
+
+    % Now we can use intlinprog
+    [solution,~,errorFlag] = intlinprog(f,integerConstraints,[],[],A,b,lowerBound,upperBound);
+
+    % Convert the final solution into a 9x9 grid to give us humans a
+    % readable solution
+    if errorFlag > 0 
+        solution = reshape(solution,9,9,9); 
+        solution = round(solution); 
+        y = ones(size(solution));
+        for k = 2:9
+            y(:,:,k) = k; 
+        end
+
+        solution = solution.*y; 
+        solution = sum(solution,3);
+    else
+        solution = [];
+    end  
+    
+    if clueForm == 1
+        % Convert to 81-by-3
+        [SM,SN] = meshgrid(1:9); % make i,j entries
+        solution = [SN(:),SM(:),solution(:)]; % i,j,k rows
+        % Now delete zero rows
+        [rrem,~] = find(solution(:,3) == 0);
+        solution(rrem,:) = [];
+    end
 end
